@@ -15,9 +15,11 @@ import {
   Pencil,
   FilePlus2,
   Zap,
+  Shield,
 } from "lucide-react";
 import { StatusDot, MethodBadge } from "@/components/app/AppShell";
 import { useStore, store, type Collection, type EndpointConfig } from "@/lib/store";
+import { MonitoringWizard } from "@/components/app/MonitoringWizard";
 
 type CtxMenu = {
   x: number;
@@ -35,6 +37,8 @@ export function CollectionsSidebar() {
   const [ctx, setCtx] = useState<CtxMenu>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [colOpen, setColOpen] = useState(true);
+  const [monitoringOpen, setMonitoringOpen] = useState(false);
+  const [monitoringCollectionId, setMonitoringCollectionId] = useState<string | null>(null);
 
   const addRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
@@ -42,7 +46,6 @@ export function CollectionsSidebar() {
 
   const unack = driftLogs.filter((d) => d.status === "unacknowledged").length;
 
-  // Close add popover on outside click
   useEffect(() => {
     if (!addOpen) return;
     const h = (e: globalThis.MouseEvent) => {
@@ -105,227 +108,279 @@ export function CollectionsSidebar() {
     setCtx(null);
   };
 
+  const openMonitoring = (collectionId: string | null = null) => {
+    setMonitoringCollectionId(collectionId);
+    setMonitoringOpen(true);
+    setAddOpen(false);
+    setCtx(null);
+  };
+
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border/60 bg-surface-2/30">
-      {/* Top toolbar — Postman style */}
-      <div className="flex items-center gap-1.5 border-b border-border/60 px-2 py-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search"
-            className="text-mono h-7 w-full rounded-md border border-border bg-surface-2/60 pl-7 pr-2 text-[11px] outline-none placeholder:text-muted-foreground/60 focus:border-brand/50"
-          />
-        </div>
-        <div ref={addRef} className="relative">
-          <button
-            onClick={() => setAddOpen((v) => !v)}
-            aria-label="New"
-            title="New"
-            className="grid size-7 place-items-center rounded-md border border-border bg-surface-2 text-foreground/80 hover:border-brand/40 hover:text-brand"
-          >
-            <Plus className="size-3.5" />
-          </button>
-          {addOpen && (
-            <div className="animate-fade-in absolute right-0 top-8 z-50 w-52 overflow-hidden rounded-md border border-border bg-popover shadow-elevated">
-              <div className="text-mono border-b border-border/60 px-3 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
-                Create new
+    <>
+      <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border/60 bg-surface-2/30">
+        {/* Top toolbar */}
+        <div className="flex items-center gap-1.5 border-b border-border/60 px-2 py-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search"
+              className="text-mono h-7 w-full rounded-md border border-border bg-surface-2/60 pl-7 pr-2 text-[11px] outline-none placeholder:text-muted-foreground/60 focus:border-brand/50"
+            />
+          </div>
+          <div ref={addRef} className="relative">
+            <button
+              onClick={() => setAddOpen((v) => !v)}
+              aria-label="New"
+              title="New"
+              className="grid size-7 place-items-center rounded-md border border-border bg-surface-2 text-foreground/80 hover:border-brand/40 hover:text-brand"
+            >
+              <Plus className="size-3.5" />
+            </button>
+            {addOpen && (
+              <div className="animate-fade-in absolute right-0 top-8 z-50 w-56 overflow-hidden rounded-md border border-border bg-popover shadow-elevated">
+                <div className="text-mono border-b border-border/60 px-3 py-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Create new
+                </div>
+                <MenuItem
+                  icon={Zap}
+                  label="Endpoint request"
+                  hint="⌘ N"
+                  onClick={() => createEndpoint(null)}
+                />
+                <MenuItem
+                  icon={FolderPlus}
+                  label="Collection"
+                  onClick={() => createCollection(null)}
+                />
+                {/* Divider */}
+                <div className="border-t border-border/60 my-0.5" />
+                <div className="text-mono px-3 py-1 text-[10px] uppercase tracking-widest text-muted-foreground/60">
+                  Monitoring
+                </div>
+                <MenuItem
+                  icon={Shield}
+                  label="Add monitoring"
+                  labelClassName="text-brand"
+                  badge="New"
+                  onClick={() => openMonitoring(null)}
+                />
               </div>
-              <MenuItem
-                icon={Zap}
-                label="Endpoint request"
-                hint="⌘ N"
-                onClick={() => createEndpoint(null)}
-              />
-              <MenuItem
-                icon={FolderPlus}
-                label="Collection"
-                onClick={() => createCollection(null)}
-              />
+            )}
+          </div>
+          <button
+            onClick={(e) => onContext(e, "root", null)}
+            aria-label="More"
+            className="grid size-7 place-items-center rounded-md border border-border bg-surface-2 text-muted-foreground hover:text-foreground"
+          >
+            <MoreHorizontal className="size-3.5" />
+          </button>
+        </div>
+
+        {/* Tree area */}
+        <div className="flex-1 overflow-y-auto py-1.5 text-sm" onClick={() => setCtx(null)}>
+          <SectionHeader
+            open={colOpen}
+            onToggle={() => setColOpen((v) => !v)}
+            label="Collections"
+            count={collections.length}
+            action={
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  createCollection(null);
+                }}
+                aria-label="New collection"
+                className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <FolderPlus className="size-3" />
+              </button>
+            }
+          />
+          {colOpen && (
+            <div onContextMenu={(e) => onContext(e, "root", null)} className="px-1.5">
+              {roots.map((c) => (
+                <TreeNode
+                  key={c.id}
+                  col={c}
+                  depth={0}
+                  collections={collections}
+                  endpoints={endpoints}
+                  filtered={filtered}
+                  onContext={onContext}
+                  currentPath={pathname}
+                  activeTabId={activeTabId}
+                  onCreateEndpoint={createEndpoint}
+                  onAddMonitoring={openMonitoring}
+                />
+              ))}
+              {orphans.length > 0 && (
+                <div className="mt-2 border-t border-border/40 pt-1.5">
+                  <div className="text-mono px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Unassigned
+                  </div>
+                  {orphans
+                    .filter((e) => !filtered || filtered.matchedEpIds.has(e.id))
+                    .map((e) => (
+                      <EndpointItem
+                        key={e.id}
+                        ep={e}
+                        depth={0}
+                        active={e.id === activeTabId || pathname.includes(e.id)}
+                        onContext={onContext}
+                      />
+                    ))}
+                </div>
+              )}
+              {roots.length === 0 && orphans.length === 0 && (
+                <div className="mx-2 mt-2 space-y-1.5">
+                  <button
+                    onClick={() => createCollection(null)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/70 bg-surface-2/30 px-3 py-3 text-[11px] text-muted-foreground transition-colors hover:border-brand/40 hover:text-foreground"
+                  >
+                    <FolderPlus className="size-3.5" /> Create your first collection
+                  </button>
+                  <button
+                    onClick={() => openMonitoring(null)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-brand/30 bg-brand/5 px-3 py-2.5 text-[11px] text-brand/80 transition-colors hover:border-brand/50 hover:text-brand hover:bg-brand/10"
+                  >
+                    <Shield className="size-3.5" /> Add first monitor
+                  </button>
+                </div>
+              )}
+              {filtered &&
+                roots.every((c) => !filtered.keepCols.has(c.id)) &&
+                orphans.every((e) => !filtered.matchedEpIds.has(e.id)) && (
+                  <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    No matches for "{q}"
+                  </p>
+                )}
             </div>
           )}
         </div>
-        <button
-          onClick={(e) => onContext(e, "root", null)}
-          aria-label="More"
-          className="grid size-7 place-items-center rounded-md border border-border bg-surface-2 text-muted-foreground hover:text-foreground"
-        >
-          <MoreHorizontal className="size-3.5" />
-        </button>
-      </div>
 
-      {/* Tree area */}
-      <div className="flex-1 overflow-y-auto py-1.5 text-sm" onClick={() => setCtx(null)}>
-        {/* COLLECTIONS section */}
-        <SectionHeader
-          open={colOpen}
-          onToggle={() => setColOpen((v) => !v)}
-          label="Collections"
-          count={collections.length}
-          action={
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                createCollection(null);
-              }}
-              aria-label="New collection"
-              className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <FolderPlus className="size-3" />
-            </button>
-          }
-        />
-        {colOpen && (
-          <div onContextMenu={(e) => onContext(e, "root", null)} className="px-1.5">
-            {roots.map((c) => (
-              <TreeNode
-                key={c.id}
-                col={c}
-                depth={0}
-                collections={collections}
-                endpoints={endpoints}
-                filtered={filtered}
-                onContext={onContext}
-                currentPath={pathname}
-                activeTabId={activeTabId}
-                onCreateEndpoint={createEndpoint}
-              />
-            ))}
-            {orphans.length > 0 && (
-              <div className="mt-2 border-t border-border/40 pt-1.5">
-                <div className="text-mono px-2 py-1 text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Unassigned
-                </div>
-                {orphans
-                  .filter((e) => !filtered || filtered.matchedEpIds.has(e.id))
-                  .map((e) => (
-                    <EndpointItem
-                      key={e.id}
-                      ep={e}
-                      depth={0}
-                      active={e.id === activeTabId || pathname.includes(e.id)}
-                      onContext={onContext}
-                    />
-                  ))}
-              </div>
+        {/* Bottom nav */}
+        <div className="border-t border-border/60 p-2">
+          <NavBtn
+            to="/dashboard"
+            icon={LayoutDashboard}
+            label="Dashboard"
+            active={pathname === "/dashboard"}
+          />
+          <NavBtn
+            to="/alerts"
+            icon={Bell}
+            label="Alerts"
+            active={pathname === "/alerts"}
+            badge={unack || undefined}
+          />
+        </div>
+
+        {/* Context menu */}
+        {ctx && (
+          <div
+            className="animate-fade-in fixed z-50 w-52 overflow-hidden rounded-md border border-border bg-popover shadow-elevated"
+            style={{ top: ctx.y, left: ctx.x }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {ctx.nodeKind === "collection" && ctx.id && (
+              <>
+                <CtxItem
+                  icon={FilePlus2}
+                  label="New endpoint here"
+                  onClick={() => createEndpoint(ctx.id)}
+                />
+                <CtxItem
+                  icon={FolderPlus}
+                  label="New sub-collection"
+                  onClick={() => createCollection(ctx.id)}
+                />
+                <CtxItem
+                  icon={Shield}
+                  label="Monitor in this collection"
+                  onClick={() => openMonitoring(ctx.id)}
+                  accent
+                />
+                <div className="border-t border-border/60" />
+                <CtxItem
+                  icon={Pencil}
+                  label="Rename"
+                  onClick={() => {
+                    const name = prompt(
+                      "Rename collection",
+                      collections.find((c) => c.id === ctx.id)?.name ?? "",
+                    );
+                    if (name) store.renameCollection(ctx.id!, name);
+                    setCtx(null);
+                  }}
+                />
+                <CtxItem
+                  icon={Trash2}
+                  danger
+                  label="Delete"
+                  onClick={() => {
+                    if (confirm("Delete this collection and its sub-collections?"))
+                      store.deleteCollection(ctx.id!);
+                    setCtx(null);
+                  }}
+                />
+              </>
             )}
-            {roots.length === 0 && orphans.length === 0 && (
-              <button
-                onClick={() => createCollection(null)}
-                className="mx-2 mt-2 flex w-[calc(100%-1rem)] items-center justify-center gap-1.5 rounded-md border border-dashed border-border/70 bg-surface-2/30 px-3 py-3 text-[11px] text-muted-foreground transition-colors hover:border-brand/40 hover:text-foreground"
-              >
-                <FolderPlus className="size-3.5" /> Create your first collection
-              </button>
+            {ctx.nodeKind === "endpoint" && ctx.id && (
+              <>
+                <CtxItem
+                  icon={Pencil}
+                  label="Edit"
+                  onClick={() => {
+                    navigate({ to: "/endpoints/$id/edit", params: { id: ctx.id! } });
+                    setCtx(null);
+                  }}
+                />
+                <CtxItem
+                  icon={Trash2}
+                  danger
+                  label="Delete"
+                  onClick={() => {
+                    store.deleteEndpoint(ctx.id!);
+                    setCtx(null);
+                  }}
+                />
+              </>
             )}
-            {filtered &&
-              roots.every((c) => !filtered.keepCols.has(c.id)) &&
-              orphans.every((e) => !filtered.matchedEpIds.has(e.id)) && (
-                <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                  No matches for "{q}"
-                </p>
-              )}
+            {ctx.nodeKind === "root" && (
+              <>
+                <CtxItem icon={Zap} label="New endpoint" onClick={() => createEndpoint(null)} />
+                <CtxItem
+                  icon={FolderPlus}
+                  label="New collection"
+                  onClick={() => createCollection(null)}
+                />
+                <div className="border-t border-border/60 my-0.5" />
+                <CtxItem
+                  icon={Shield}
+                  label="Add monitoring"
+                  onClick={() => openMonitoring(null)}
+                  accent
+                />
+              </>
+            )}
           </div>
         )}
-      </div>
+      </aside>
 
-      {/* Bottom nav */}
-      <div className="border-t border-border/60 p-2">
-        <NavBtn
-          to="/dashboard"
-          icon={LayoutDashboard}
-          label="Dashboard"
-          active={pathname === "/dashboard"}
+      {/* Monitoring Wizard — rendered outside the aside so it can overlay everything */}
+      {monitoringOpen && (
+        <MonitoringWizard
+          onClose={() => setMonitoringOpen(false)}
+          initialCollectionId={monitoringCollectionId}
         />
-        <NavBtn
-          to="/alerts"
-          icon={Bell}
-          label="Alerts"
-          active={pathname === "/alerts"}
-          badge={unack || undefined}
-        />
-      </div>
-
-      {/* Context menu */}
-      {ctx && (
-        <div
-          className="animate-fade-in fixed z-50 w-52 overflow-hidden rounded-md border border-border bg-popover shadow-elevated"
-          style={{ top: ctx.y, left: ctx.x }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {ctx.nodeKind === "collection" && ctx.id && (
-            <>
-              <CtxItem
-                icon={FilePlus2}
-                label="New endpoint here"
-                onClick={() => createEndpoint(ctx.id)}
-              />
-              <CtxItem
-                icon={FolderPlus}
-                label="New sub-collection"
-                onClick={() => createCollection(ctx.id)}
-              />
-              <div className="border-t border-border/60" />
-              <CtxItem
-                icon={Pencil}
-                label="Rename"
-                onClick={() => {
-                  const name = prompt(
-                    "Rename collection",
-                    collections.find((c) => c.id === ctx.id)?.name ?? "",
-                  );
-                  if (name) store.renameCollection(ctx.id!, name);
-                  setCtx(null);
-                }}
-              />
-              <CtxItem
-                icon={Trash2}
-                danger
-                label="Delete"
-                onClick={() => {
-                  if (confirm("Delete this collection and its sub-collections?"))
-                    store.deleteCollection(ctx.id!);
-                  setCtx(null);
-                }}
-              />
-            </>
-          )}
-          {ctx.nodeKind === "endpoint" && ctx.id && (
-            <>
-              <CtxItem
-                icon={Pencil}
-                label="Edit"
-                onClick={() => {
-                  navigate({ to: "/endpoints/$id/edit", params: { id: ctx.id! } });
-                  setCtx(null);
-                }}
-              />
-              <CtxItem
-                icon={Trash2}
-                danger
-                label="Delete"
-                onClick={() => {
-                  store.deleteEndpoint(ctx.id!);
-                  setCtx(null);
-                }}
-              />
-            </>
-          )}
-          {ctx.nodeKind === "root" && (
-            <>
-              <CtxItem icon={Zap} label="New endpoint" onClick={() => createEndpoint(null)} />
-              <CtxItem
-                icon={FolderPlus}
-                label="New collection"
-                onClick={() => createCollection(null)}
-              />
-            </>
-          )}
-        </div>
       )}
-    </aside>
+    </>
   );
 }
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
 
 function SectionHeader({
   open,
@@ -357,11 +412,15 @@ function MenuItem({
   icon: Icon,
   label,
   hint,
+  labelClassName,
+  badge,
   onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   hint?: string;
+  labelClassName?: string;
+  badge?: string;
   onClick: () => void;
 }) {
   return (
@@ -370,7 +429,12 @@ function MenuItem({
       className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-accent"
     >
       <Icon className="size-3.5 text-muted-foreground" />
-      <span>{label}</span>
+      <span className={labelClassName}>{label}</span>
+      {badge && (
+        <span className="text-mono ml-1 rounded bg-brand/20 px-1 py-px text-[9px] font-bold uppercase tracking-widest text-brand">
+          {badge}
+        </span>
+      )}
       {hint && (
         <span className="text-mono ml-auto text-[10px] text-muted-foreground/60">{hint}</span>
       )}
@@ -416,16 +480,20 @@ function CtxItem({
   label,
   onClick,
   danger,
+  accent,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   onClick: () => void;
   danger?: boolean;
+  accent?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent ${danger ? "text-danger" : "text-foreground"}`}
+      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent ${
+        danger ? "text-danger" : accent ? "text-brand" : "text-foreground"
+      }`}
     >
       <Icon className="size-3.5" />
       {label}
@@ -443,6 +511,7 @@ function TreeNode({
   currentPath,
   activeTabId,
   onCreateEndpoint,
+  onAddMonitoring,
 }: {
   col: Collection;
   depth: number;
@@ -453,6 +522,7 @@ function TreeNode({
   currentPath: string;
   activeTabId: string | null;
   onCreateEndpoint: (colId: string | null) => void;
+  onAddMonitoring: (colId: string | null) => void;
 }) {
   if (filtered && !filtered.keepCols.has(col.id)) return null;
 
@@ -520,6 +590,7 @@ function TreeNode({
               currentPath={currentPath}
               activeTabId={activeTabId}
               onCreateEndpoint={onCreateEndpoint}
+              onAddMonitoring={onAddMonitoring}
             />
           ))}
           {visibleEps.map((ep) => (
