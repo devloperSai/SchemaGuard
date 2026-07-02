@@ -8,8 +8,8 @@ import {
   updateEndpointStatus,
   touchEndpoint,
 } from "./snapshotManager.js";
-import { sendDriftAlert } from "./alertService.js";
 import Endpoint from "../models/Endpoint.js";
+import { sendDriftAlert, sendDowntimeAlert } from "./alertService.js";
 
 function buildHeaders(endpoint) {
   const headers = {};
@@ -134,6 +134,8 @@ export const checkEndpoint = async (endpoint) => {
     return { status: "drifted", endpoint: endpoint.name, diffResult };
   } catch (err) {
     await touchEndpoint(endpoint._id);
+    await sendDowntimeAlert(endpoint._id, err.message);
     return { status: "error", endpoint: endpoint.name, error: err.message };
   }
 };
+
