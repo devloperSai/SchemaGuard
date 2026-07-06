@@ -1,4 +1,3 @@
-// server/services/alertService.js
 import nodemailer from "nodemailer";
 import { getIO } from "../config/socket.js";
 import DriftLog from "../models/DriftLog.js";
