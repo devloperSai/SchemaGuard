@@ -1,3 +1,4 @@
+// server/services/alertService.js
 import nodemailer from "nodemailer";
 import { getIO } from "../config/socket.js";
 import DriftLog from "../models/DriftLog.js";
@@ -8,13 +9,28 @@ import User from "../models/User.js";
 // endpoint is still unreachable — avoids spamming on every poll cycle.
 const DOWNTIME_ALERT_COOLDOWN_MS = 30 * 60 * 1000;
 
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: Number(process.env.EMAIL_PORT),
-    secure: process.env.EMAIL_PORT === "465",
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+const createTransporter = () => {
+  const host = process.env.EMAIL_HOST;
+  const port = Number(process.env.EMAIL_PORT);
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
+
+  if (!host || !port || !user || !pass) {
+    console.warn(
+      "[alertService] Missing EMAIL_HOST/EMAIL_PORT/EMAIL_USER/EMAIL_PASS " +
+        "in .env — email sending will fail. For Ethereal, generate a test " +
+        "account at https://ethereal.email and use its smtp.ethereal.email " +
+        "host, port 587, and the generated user/pass.",
+    );
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465, // true for 465, false for 587/others (STARTTLS)
+    auth: { user, pass },
   });
+};
 
 // Single choke point for every outgoing alert email (drift AND downtime).
 // TEAM_ALERT_EMAIL is optional — CC a shared/on-call inbox alongside the
@@ -22,15 +38,29 @@ const createTransporter = () =>
 const sendEmail = async ({ to, subject, text }) => {
   try {
     const transporter = createTransporter();
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: `"SchemaGuard" <${process.env.EMAIL_USER}>`,
       to,
       cc: process.env.TEAM_ALERT_EMAIL || undefined,
       subject,
       text,
     });
+
+    // Ethereal (and any nodemailer JSON-transport-style test account) never
+    // delivers to a real inbox — the ONLY way to see the message is this
+    // preview URL. Log it loudly so it's not missed in server output.
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log(`[alertService] Ethereal preview: ${previewUrl}`);
+    } else {
+      console.log(`[alertService] Email sent: ${info.messageId}`);
+    }
+
+    return info;
   } catch (err) {
-    console.error("Email send failed:", err.message);
+    // Log the full error, not just .message — auth/connection failures
+    // often carry useful detail in .code / .response.
+    console.error("[alertService] Email send failed:", err);
   }
 };
 
