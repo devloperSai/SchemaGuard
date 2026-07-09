@@ -1,6 +1,6 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Shield, LayoutDashboard, Network, Bell, LogOut, Activity, Menu, X } from "lucide-react";
-import { auth, type AuthUser } from "@/lib/mock";
+import { auth, type AuthUser } from "@/lib/auth";
 import { useStore } from "@/lib/store";
 import { useEffect, useState, type ReactNode } from "react";
 

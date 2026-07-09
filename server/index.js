@@ -14,6 +14,7 @@ import collectionRoutes from "./routes/collection.routes.js";
 import driftRoutes from "./routes/drift.routes.js";
 import proxyRoutes from "./routes/proxy.routes.js";
 import testRoutes from "./routes/test.routes.js";
+import environmentRoutes from "./routes/environment.routes.js";
 
 dotenv.config();
 
@@ -83,4 +84,6 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
   console.log(`SchemaGuard server running on port ${PORT}`);
+
+  app.use("/api/environments", environmentRoutes);
 });

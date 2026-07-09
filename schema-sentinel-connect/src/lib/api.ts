@@ -2,7 +2,7 @@
 // for now (see lib/mock.ts) and the backend runs with SKIP_AUTH=true, so no
 // token needs to be sent yet. Once a real login flow exists, attach
 // `Authorization: Bearer <token>` below and nothing else needs to change.
-import type { EndpointConfig, Collection } from "./store";
+import type { EndpointConfig, Collection, Environment } from "./store";
 import type { DriftLog, DiffRow } from "./mock";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
@@ -49,6 +49,19 @@ export const collectionsApi = {
       body: JSON.stringify({ name: c.name, parentId: c.parentId }),
     }).then((r) => r.collection),
   remove: (id: string) => request(`/collections/${id}`, { method: "DELETE" }),
+};
+
+// Environments are now backend-persisted (previously client-only, per the
+// old code comment in store.ts) so the poller can resolve {{VAR}} tokens
+// server-side against the same data the user configured in the UI.
+export const environmentsApi = {
+  list: () => request<{ environments: Environment[] }>("/environments").then((r) => r.environments),
+  upsert: (e: Pick<Environment, "id" | "name" | "variables">) =>
+    request<{ environment: Environment }>(`/environments/${e.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name: e.name, variables: e.variables }),
+    }).then((r) => r.environment),
+  remove: (id: string) => request(`/environments/${id}`, { method: "DELETE" }),
 };
 
 export interface ExecuteResult {

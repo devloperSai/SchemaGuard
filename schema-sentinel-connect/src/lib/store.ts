@@ -4,7 +4,7 @@
 // API is unreachable, `state.error` is set so the UI can surface it.
 import { useSyncExternalStore } from "react";
 import type { Endpoint, Method, DriftLog } from "./mock";
-import { endpointsApi, collectionsApi, driftApi } from "./api";
+import { endpointsApi, collectionsApi, driftApi, environmentsApi } from "./api";
 
 export type AuthKind = "none" | "bearer" | "apiKey" | "basic" | "inherit";
 export type BodyKind =
@@ -16,6 +16,9 @@ export type BodyKind =
   | "binary"
   | "graphql";
 export type KV = { id: string; key: string; value: string; enabled: boolean; description?: string };
+
+export type CheckType = "schema_drift" | "uptime" | "response_time" | "content_match";
+export type AlertOn = "first_failure" | "consecutive_2" | "consecutive_3" | "consecutive_5";
 
 export interface EndpointConfig extends Endpoint {
   collectionId: string | null;
@@ -42,6 +45,16 @@ export interface EndpointConfig extends Endpoint {
   };
   preScript: string;
   postScript?: string;
+  /** Which of the Monitoring Wizard's check types this endpoint enforces. */
+  checkTypes: CheckType[];
+  /** Required for the "uptime" check; null = "any 2xx". */
+  expectedStatus: number | null;
+  /** Required for the "response_time" check, in ms. */
+  responseTimeThresholdMs: number | null;
+  /** Required for the "content_match" check. */
+  contentMatch: { field: string; value: string };
+  /** How many consecutive failures before an alert actually fires. */
+  alertOn: AlertOn;
   /** Client-only: true for a tab that hasn't been saved yet. Never persisted. */
   isDraft?: boolean;
 }
@@ -119,25 +132,38 @@ export function useStore<T>(sel: (s: State) => T): T {
   );
 }
 
+// Persists a single environment's current in-memory state to the API. Called
+// after any environment/env-var mutation below (setState is synchronous, so
+// `state` already reflects the change by the time this reads it).
+function persistEnvironment(envId: string) {
+  const env = state.environments.find((e) => e.id === envId);
+  if (env)
+    environmentsApi.upsert(env).catch((err) => console.error("Failed to save environment:", err));
+}
+
 let initPromise: Promise<void> | null = null;
 
 // ─── Actions ────────────────────────────────────────────────────────────────
 export const store = {
-  /** Loads collections, endpoints, and drift logs from the API. Idempotent —
-   *  safe to call from multiple mounted components (e.g. React strict mode). */
+  /** Loads collections, endpoints, environments, and drift logs from the API.
+   *  Idempotent — safe to call from multiple mounted components (e.g. React
+   *  strict mode). */
   async init() {
     if (initPromise) return initPromise;
     initPromise = (async () => {
       try {
-        const [collections, endpoints, driftLogs] = await Promise.all([
+        const [collections, endpoints, driftLogs, environments] = await Promise.all([
           collectionsApi.list(),
           endpointsApi.list(),
           driftApi.list(),
+          environmentsApi.list(),
         ]);
         setState({
           collections: collections.map((c) => ({ ...c, expanded: true })),
           endpoints,
           driftLogs,
+          environments,
+          activeEnvId: environments[0]?.id ?? "",
           initialized: true,
           error: null,
         });
@@ -282,6 +308,11 @@ export const store = {
       body: { kind: "none", json: "{\n  \n}", raw: "", rawLang: "JSON" },
       preScript: "// Runs before each poll. Available: req, env, console\n",
       postScript: "// Runs after every poll. Available: res, schema, pm\n",
+      checkTypes: ["schema_drift", "uptime"],
+      expectedStatus: null,
+      responseTimeThresholdMs: null,
+      contentMatch: { field: "", value: "" },
+      alertOn: "first_failure",
       isDraft: true,
     };
   },
@@ -360,7 +391,7 @@ export const store = {
     });
   },
 
-  // ── Environments (local-only — not backed by the API yet) ──────────────
+  // ── Environments (now API-backed — was local-only, see api.ts) ─────────
   activateEnv(id: string) {
     setState({ activeEnvId: id });
   },
@@ -370,6 +401,7 @@ export const store = {
       environments: [...s.environments, e],
       activeEnvId: s.activeEnvId || e.id,
     }));
+    environmentsApi.upsert(e).catch((err) => console.error("Failed to create environment:", err));
     return e.id;
   },
   deleteEnvironment(id: string) {
@@ -378,11 +410,13 @@ export const store = {
       activeEnvId:
         s.activeEnvId === id ? (s.environments.find((e) => e.id !== id)?.id ?? "") : s.activeEnvId,
     }));
+    environmentsApi.remove(id).catch((err) => console.error("Failed to delete environment:", err));
   },
   updateEnvironment(id: string, patch: Partial<Environment>) {
     setState((s) => ({
       environments: s.environments.map((e) => (e.id === id ? { ...e, ...patch } : e)),
     }));
+    persistEnvironment(id);
   },
   addEnvVar(envId: string) {
     const v: EnvVar = { id: uid("v"), key: "", value: "", enabled: true, secret: false };
@@ -391,6 +425,7 @@ export const store = {
         e.id === envId ? { ...e, variables: [...e.variables, v] } : e,
       ),
     }));
+    persistEnvironment(envId);
   },
   updateEnvVar(envId: string, varId: string, patch: Partial<EnvVar>) {
     setState((s) => ({
@@ -400,6 +435,7 @@ export const store = {
           : e,
       ),
     }));
+    persistEnvironment(envId);
   },
   deleteEnvVar(envId: string, varId: string) {
     setState((s) => ({
@@ -407,6 +443,7 @@ export const store = {
         e.id === envId ? { ...e, variables: e.variables.filter((v) => v.id !== varId) } : e,
       ),
     }));
+    persistEnvironment(envId);
   },
 };
 

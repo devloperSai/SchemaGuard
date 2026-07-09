@@ -59,9 +59,19 @@ export const login = async (req, res, next) => {
   }
 };
 
+// FIX: previously returned the raw Mongoose doc (with `_id`), which didn't
+// match the { id, name, email } shape login/register return. Normalize it so
+// frontend code (auth.refresh() in lib/auth.ts) can rely on a consistent shape.
 export const getMe = async (req, res, next) => {
   try {
-    res.status(200).json({ success: true, user: req.user });
+    res.status(200).json({
+      success: true,
+      user: {
+        id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+      },
+    });
   } catch (err) {
     next(err);
   }

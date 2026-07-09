@@ -56,6 +56,17 @@ const bodySchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Content-match check config (field path + expected value), set by the
+// Monitoring Wizard. Previously collected in the UI and thrown away —
+// now persisted and enforced in proxyService.checkEndpoint.
+const contentMatchSchema = new mongoose.Schema(
+  {
+    field: { type: String, default: "" },
+    value: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
 // _id is a plain String (e.g. "ep_4f9a2cz") because the frontend generates
 // its own ids client-side and persists via upsert-by-id. This keeps the
 // store.ts <-> API contract a 1:1 passthrough — no id translation needed.
@@ -99,6 +110,36 @@ const endpointSchema = new mongoose.Schema(
     body: { type: bodySchema, default: () => ({ kind: "none" }) },
     preScript: { type: String, default: "" },
     postScript: { type: String, default: "" },
+
+    // ── Monitoring Wizard config (was previously encoded only as tags and
+    //    silently discarded — now persisted and enforced by the poller) ──
+    checkTypes: {
+      type: [String],
+      enum: ["schema_drift", "uptime", "response_time", "content_match"],
+      default: ["schema_drift", "uptime"],
+    },
+    expectedStatus: { type: Number, default: null },
+    responseTimeThresholdMs: { type: Number, default: null },
+    contentMatch: {
+      type: contentMatchSchema,
+      default: () => ({ field: "", value: "" }),
+    },
+    alertOn: {
+      type: String,
+      enum: [
+        "first_failure",
+        "consecutive_2",
+        "consecutive_3",
+        "consecutive_5",
+      ],
+      default: "first_failure",
+    },
+    consecutiveFailures: { type: Number, default: 0 },
+
+    // ── Poller distributed-lock fields (mitigates double-polling; see
+    //    jobs/poller.job.js for the full explanation and caveats) ──
+    isChecking: { type: Boolean, default: false },
+    checkClaimedAt: { type: Date, default: null },
   },
   {
     timestamps: true,

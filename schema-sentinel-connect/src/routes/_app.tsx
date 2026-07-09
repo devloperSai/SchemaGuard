@@ -1,13 +1,20 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { auth } from "@/lib/mock";
+import { auth } from "@/lib/auth";
 import { store } from "@/lib/store";
 
 export const Route = createFileRoute("/_app")({
-  beforeLoad: () => {
-    // SSR-safe: only enforce on the client. Mock auth lives in localStorage.
+  beforeLoad: async () => {
+    // SSR-safe: only enforce on the client. The JWT lives in localStorage.
     if (typeof window === "undefined") return;
-    if (!auth.getToken()) {
+    const token = auth.getToken();
+    if (!token) {
+      throw redirect({ to: "/login" });
+    }
+    // Validate the token is still good (not expired / user still exists)
+    // rather than trusting its mere presence.
+    const user = await auth.refresh();
+    if (!user) {
       throw redirect({ to: "/login" });
     }
   },
@@ -16,8 +23,7 @@ export const Route = createFileRoute("/_app")({
 
 function AppLayout() {
   // Pull real endpoints/collections from the backend once the auth gate has
-  // passed. Falls back to local demo data automatically if the API is down
-  // (see store.init()).
+  // passed.
   useEffect(() => {
     store.init();
   }, []);
